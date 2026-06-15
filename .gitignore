@@ -1,2 +1,5 @@
-# .env
-# backend/.env
+.env
+backend/.env
+**/venv/
+**/node_modules/
+dist/
