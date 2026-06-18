@@ -73,6 +73,59 @@ K8S_TOOLS = [
              "yaml":{"type":"string"},
              "dry_run":{"type":"boolean","default":True}
          }}),
+    Tool(
+        name="delete_pod",
+        description="Delete a specific pod in a namespace. Use this to restart failing or stuck pods.",
+        inputSchema={
+            "type": "object",
+            "required": ["pod"],
+            "properties": {
+                "pod": {
+                    "type": "string",
+                    "description": "The name of the pod to delete."
+                },
+                "namespace": {
+                    "type": "string",
+                    "description": "The namespace of the pod.",
+                    "default": "default"
+                },
+                "force": {
+                    "type": "boolean",
+                    "description": "If true, force delete immediately (grace-period=0).",
+                    "default": False
+                }
+            },
+            "additionalProperties": False
+        }
+    ),
+    Tool(
+        name="run_pod",
+        description="Run a new pod using a specific container image.",
+        inputSchema={
+            "type": "object",
+            "required": ["name", "image"],
+            "properties": {
+                "name": {
+                    "type": "string",
+                    "description": "The name of the pod to create."
+                },
+                "image": {
+                    "type": "string",
+                    "description": "The container image to run (e.g. nginx, alpine, busybox)."
+                },
+                "namespace": {
+                    "type": "string",
+                    "description": "The namespace to run the pod in.",
+                    "default": "default"
+                },
+                "command": {
+                    "type": "string",
+                    "description": "Optional command/args to run inside the pod."
+                }
+            },
+            "additionalProperties": False
+        }
+    ),
 ]
 
 async def handle_k8s(name: str, args: dict) -> list:
@@ -121,5 +174,21 @@ async def handle_k8s(name: str, args: dict) -> list:
         flag = "--dry-run=client" if args.get("dry_run", True) else ""
         safe = args["yaml"].replace("'", "'\\''")
         out  = run(f"echo '{safe}' | kubectl apply {flag} -f -")
+
+    elif name == "delete_pod":
+        ns = args.get("namespace", "default")
+        pod = args["pod"]
+        if ns == "kube-system":
+            out = "Error: Deleting resources in the kube-system namespace is blocked by safety guardrails."
+        else:
+            force_flag = "--grace-period=0 --force" if args.get("force") else ""
+            out = run(f"kubectl delete pod {pod} -n {ns} {force_flag}")
+
+    elif name == "run_pod":
+        ns = args.get("namespace", "default")
+        name_val = args["name"]
+        image = args["image"]
+        cmd_val = f"-- {args['command']}" if args.get("command") else ""
+        out = run(f"kubectl run {name_val} --image={image} -n {ns} {cmd_val}")
 
     return [TextContent(type="text", text=out)]

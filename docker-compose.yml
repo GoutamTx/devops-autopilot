@@ -1,0 +1,29 @@
+services:
+  backend:
+    build:
+      context: .
+      dockerfile: backend/Dockerfile
+    container_name: devops-autopilot-backend
+    restart: unless-stopped
+    network_mode: host
+    command: uvicorn main:app --host 0.0.0.0 --port 8005
+    volumes:
+      # Mount Kubernetes configuration to allow kubectl commands inside the container
+      - ~/.kube:/root/.kube:ro
+      # Mount AWS credentials to allow aws-cli commands inside the container
+      - ~/.aws:/root/.aws:ro
+      # Mount minikube certificates matching the path in host's kubeconfig
+      - ~/.minikube:/home/goutam/.minikube:ro
+      - ~/.minikube:/home/ubuntu/.minikube:ro
+    env_file:
+      - backend/.env
+
+  frontend:
+    build:
+      context: ./frontend
+      dockerfile: Dockerfile
+    container_name: devops-autopilot-frontend
+    restart: unless-stopped
+    network_mode: host
+    depends_on:
+      - backend
