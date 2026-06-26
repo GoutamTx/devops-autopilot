@@ -86,7 +86,7 @@ def build_tools(tools: list):
     return declarations
 
 
-async def chat(messages: list, tools: list) -> dict:
+async def chat(messages: list, tools: list, user: dict = None) -> dict:
     tool_calls_made = []
 
     # convert messages to Gemini Content format
@@ -139,8 +139,14 @@ async def chat(messages: list, tools: list) -> dict:
             args = dict(fn.args) if fn.args else {}
             tool_calls_made.append({"tool": fn.name, "input": args})
 
-            from mcp_bridge import call_mcp_tool
-            result_text = await call_mcp_tool(fn.name, args)
+            is_restricted = fn.name in ["rollout_restart", "scale_deployment", "apply_manifest", "delete_pod", "run_pod"]
+            if user and user.get("role") != "admin" and is_restricted:
+                from database import create_approval_request
+                req_id = create_approval_request(user["id"], fn.name, args)
+                result_text = f"Action intercepted: This action requires manager approval. Approval request #{req_id} has been submitted. Explain this to the user, state the request ID, and tell them they will need to execute the request once approved by an admin."
+            else:
+                from mcp_bridge import call_mcp_tool
+                result_text = await call_mcp_tool(fn.name, args)
 
             tool_result_parts.append(types.Part(
                 function_response=types.FunctionResponse(
@@ -173,7 +179,7 @@ async def chat(messages: list, tools: list) -> dict:
     }
 
 
-async def chat_stream(messages: list, tools: list):
+async def chat_stream(messages: list, tools: list, user: dict = None):
     tool_calls_made = []
 
     # convert messages to Gemini Content format
@@ -235,8 +241,14 @@ async def chat_stream(messages: list, tools: list):
         for fn in fn_calls:
             args = dict(fn.args) if fn.args else {}
 
-            from mcp_bridge import call_mcp_tool
-            result_text = await call_mcp_tool(fn.name, args)
+            is_restricted = fn.name in ["rollout_restart", "scale_deployment", "apply_manifest", "delete_pod", "run_pod"]
+            if user and user.get("role") != "admin" and is_restricted:
+                from database import create_approval_request
+                req_id = create_approval_request(user["id"], fn.name, args)
+                result_text = f"Action intercepted: This action requires manager approval. Approval request #{req_id} has been submitted. Explain this to the user, state the request ID, and tell them they will need to execute the request once approved by an admin."
+            else:
+                from mcp_bridge import call_mcp_tool
+                result_text = await call_mcp_tool(fn.name, args)
 
             # Stream tool result back in real-time
             yield f"data: {json.dumps({'type': 'tool_result', 'tool': fn.name, 'result': result_text})}\n\n"

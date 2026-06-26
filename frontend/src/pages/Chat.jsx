@@ -1,5 +1,6 @@
 import React, { useState, useRef, useEffect } from "react";
 import Message from "../components/Message";
+import { useAuth } from "../AuthContext";
 
 const API = "/api";
 
@@ -13,6 +14,7 @@ const QUICK_PROMPTS = [
 ];
 
 export default function Chat() {
+  const { apiFetch } = useAuth();
   const [messages, setMessages]   = useState([]);  // display messages
   const [apiHistory, setApiHistory] = useState([]); // Claude API format
   const [input, setInput]         = useState("");
@@ -21,7 +23,7 @@ export default function Chat() {
   const bottomRef = useRef(null);
 
   useEffect(() => {
-    fetch(`${API}/tools`)
+    apiFetch("/api/tools")
       .then(r => r.json())
       .then(d => setTools(d.tools))
       .catch(err => console.error("Error loading tools:", err));
@@ -30,6 +32,10 @@ export default function Chat() {
   useEffect(() => {
     bottomRef.current?.scrollIntoView({ behavior: "smooth" });
   }, [messages, loading]);
+
+  const handleExecuted = async (resultText, reqId) => {
+    send(`Manager approved and executed Request #${reqId}. Tool result: ${resultText}`);
+  };
 
   async function send(text) {
     if (!text.trim() || loading) return;
@@ -50,9 +56,8 @@ export default function Chat() {
     }]);
 
     try {
-      const res = await fetch(`${API}/chat/stream`, {
+      const res = await apiFetch("/api/chat/stream", {
         method: "POST",
-        headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ messages: newHistory })
       });
 
@@ -165,6 +170,7 @@ export default function Chat() {
             key={i} 
             msg={m} 
             isStreaming={loading && i === messages.length - 1} 
+            onExecuted={(resultText, reqId) => handleExecuted(resultText, reqId)}
           />
         ))}
         

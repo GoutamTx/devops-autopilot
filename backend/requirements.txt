@@ -4,3 +4,6 @@ anthropic
 mcp
 python-dotenv
 google-genai
+pyjwt
+passlib[bcrypt]
+cryptography

@@ -1,8 +1,10 @@
 import React, { useState, useEffect, useCallback } from "react";
+import { useAuth } from "../AuthContext";
 
 const API = "/api";
 
 export default function Dashboard() {
+  const { apiFetch } = useAuth();
   const [data, setData] = useState(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
@@ -11,7 +13,7 @@ export default function Dashboard() {
   const fetchDashboardData = useCallback(async (isManual = false) => {
     if (isManual) setLoading(true);
     try {
-      const res = await fetch(`${API}/k8s/dashboard`);
+      const res = await apiFetch("/api/k8s/dashboard");
       if (!res.ok) throw new Error(`HTTP error! status: ${res.status}`);
       const result = await res.json();
       setData(result);

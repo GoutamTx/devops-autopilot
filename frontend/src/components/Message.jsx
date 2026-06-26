@@ -2,12 +2,29 @@ import ReactMarkdown from "react-markdown";
 import { Prism as SyntaxHighlighter } from "react-syntax-highlighter";
 import { oneDark } from "react-syntax-highlighter/dist/esm/styles/prism";
 import ToolOutput from "./ToolOutput";
+import ApprovalCard from "./ApprovalCard";
 
-export default function Message({ msg, isStreaming }) {
+export default function Message({ msg, isStreaming, onExecuted }) {
   const isUser = msg.role === "user";
 
   // Extract tool results from message history
   const toolResults = msg.toolResults || [];
+
+  // Parse approval request ID if present
+  const requestRegex = /(?:approval request|request) #(\d+)/i;
+  let reqId = null;
+  const match = msg.content?.match(requestRegex);
+  if (match) {
+    reqId = parseInt(match[1], 10);
+  } else {
+    for (const r of toolResults) {
+      const rMatch = typeof r === "string" && r.match(requestRegex);
+      if (rMatch) {
+        reqId = parseInt(rMatch[1], 10);
+        break;
+      }
+    }
+  }
 
   return (
     <div className={`flex ${isUser ? "justify-end" : "justify-start"} mb-4`}>
@@ -53,6 +70,11 @@ export default function Message({ msg, isStreaming }) {
             </>
           )}
         </div>
+        
+        {/* Render Approval Card if request ID detected */}
+        {!isUser && reqId && (
+          <ApprovalCard requestId={reqId} onExecuted={(resultText) => onExecuted(resultText, reqId)} />
+        )}
       </div>
     </div>
   );

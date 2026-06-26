@@ -1,7 +1,7 @@
 import asyncio
 import os
 # Reload triggered for new MCP tools
-from fastapi import FastAPI, Request
+from fastapi import FastAPI, Request, Depends, HTTPException, status
 from fastapi.responses import JSONResponse, StreamingResponse
 from datetime import datetime, timezone
 import json
@@ -11,6 +11,16 @@ from dotenv import load_dotenv
 from mcp_bridge import call_mcp_tool
 from claude import chat
 from tools_cache import get_cached_tools   # see below
+
+# Authentication & Database imports
+from auth import get_current_user, require_admin, verify_password, create_access_token
+from database import (
+    get_user_by_username,
+    get_request_by_id,
+    update_request_status,
+    get_all_requests,
+    get_db_connection,
+)
 
 load_dotenv()
 
@@ -39,6 +49,13 @@ class ChatResponse(BaseModel):
     response: str
     tool_calls: list
     updated_messages: list
+
+class LoginRequest(BaseModel):
+    username: str
+    password: str
+
+class ReviewRequest(BaseModel):
+    status: str
 
 
 # ── routes ───────────────────────────────────────────────────────
@@ -126,19 +143,96 @@ async def run_kubectl_json(args: list) -> dict:
 def health():
     return {"status": "ok"}
 
+@app.post("/auth/login")
+def login(req: LoginRequest):
+    user = get_user_by_username(req.username)
+    if not user or not verify_password(req.password, user["password_hash"]):
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="Invalid username or password"
+        )
+    token = create_access_token({"sub": user["username"], "id": user["id"], "role": user["role"]})
+    return {"token": token, "username": user["username"], "role": user["role"]}
+
+@app.get("/admin/requests")
+def list_admin_requests(current_user: dict = Depends(require_admin)):
+    return {"requests": get_all_requests()}
+
+@app.post("/admin/requests/{id}/review")
+def review_request(id: int, req: ReviewRequest, current_user: dict = Depends(require_admin)):
+    r = get_request_by_id(id)
+    if not r:
+        raise HTTPException(status_code=404, detail="Request not found")
+    if r["status"] != "pending":
+        raise HTTPException(status_code=400, detail="Request is already resolved")
+    if req.status not in ["approved", "denied"]:
+        raise HTTPException(status_code=400, detail="Invalid status. Must be approved or denied")
+    
+    update_request_status(id, req.status, current_user["id"])
+    return {"status": "ok", "request_id": id, "new_status": req.status}
+
+@app.get("/requests")
+def list_user_requests(current_user: dict = Depends(get_current_user)):
+    conn = get_db_connection()
+    cursor = conn.cursor()
+    if current_user["role"] == "admin":
+        cursor.execute("""
+            SELECT r.*, u.username as requester_name, rev.username as reviewer_name
+            FROM approval_requests r
+            JOIN users u ON r.user_id = u.id
+            LEFT JOIN users rev ON r.reviewed_by = rev.id
+            ORDER BY r.created_at DESC
+        """)
+    else:
+        cursor.execute("""
+            SELECT r.*, u.username as requester_name, rev.username as reviewer_name
+            FROM approval_requests r
+            JOIN users u ON r.user_id = u.id
+            LEFT JOIN users rev ON r.reviewed_by = rev.id
+            WHERE r.user_id = ?
+            ORDER BY r.created_at DESC
+        """, (current_user["id"],))
+    rows = cursor.fetchall()
+    conn.close()
+    return {"requests": [dict(r) for r in rows]}
+
+@app.post("/chat/execute-request/{id}")
+async def execute_approved_request(id: int, current_user: dict = Depends(get_current_user)):
+    r = get_request_by_id(id)
+    if not r:
+        raise HTTPException(status_code=404, detail="Request not found")
+    
+    # Verify ownership or admin rights
+    if current_user["role"] != "admin" and r["user_id"] != current_user["id"]:
+        raise HTTPException(status_code=403, detail="Not authorized to execute this request")
+        
+    if r["status"] != "approved":
+        raise HTTPException(status_code=400, detail=f"Request is not approved (current status: {r['status']})")
+        
+    # Execute the tool
+    tool_name = r["tool_name"]
+    tool_input = json.loads(r["tool_input"])
+    
+    try:
+        result_text = await call_mcp_tool(tool_name, tool_input)
+        update_request_status(id, "executed")
+        return {"status": "executed", "result": result_text}
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Error executing tool: {str(e)}")
+
 @app.get("/tools")
-async def list_tools():
+async def list_tools(current_user: dict = Depends(get_current_user)):
     tools = await get_cached_tools()
     return {"tools": tools}
 
 @app.post("/chat", response_model=ChatResponse)
-async def chat_endpoint(req: ChatRequest):
+async def chat_endpoint(req: ChatRequest, current_user: dict = Depends(get_current_user)):
     tools = await get_cached_tools()
-    result = await chat(req.messages, tools)
+    result = await chat(req.messages, tools, current_user)
     return result
 
 @app.get("/k8s/dashboard")
-async def k8s_dashboard():
+async def k8s_dashboard(current_user: dict = Depends(get_current_user)):
     # Fetch all K8s data in parallel
     pods_task = run_kubectl_json(["get", "pods", "-A"])
     nodes_task = run_kubectl_json(["get", "nodes"])
@@ -231,10 +325,10 @@ async def k8s_dashboard():
     }
 
 @app.post("/chat/stream")
-async def chat_stream_endpoint(req: ChatRequest):
+async def chat_stream_endpoint(req: ChatRequest, current_user: dict = Depends(get_current_user)):
     tools = await get_cached_tools()
     from claude import chat_stream
     return StreamingResponse(
-        chat_stream(req.messages, tools),
+        chat_stream(req.messages, tools, current_user),
         media_type="text/event-stream"
     )
