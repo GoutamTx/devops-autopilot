@@ -26,11 +26,19 @@ async def get_tools_and_session():
             ]
             return session, anthropic_tools
 
-async def call_mcp_tool(tool_name: str, tool_input: dict) -> str:
+async def call_mcp_tool(tool_name: str, tool_input: dict, context: str = None, profile: str = None) -> str:
     """Spawn MCP server, call one tool, return text result"""
+    import os
+    env = dict(os.environ)
+    if context:
+        env["KUBECONTEXT"] = context
+    if profile:
+        env["AWS_PROFILE"] = profile
+
     server_params = StdioServerParameters(
         command="python",
         args=[MCP_SERVER_PATH],
+        env=env,
     )
     async with stdio_client(server_params) as (read, write):
         async with ClientSession(read, write) as session:

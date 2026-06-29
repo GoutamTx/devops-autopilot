@@ -146,7 +146,9 @@ async def chat(messages: list, tools: list, user: dict = None) -> dict:
                 result_text = f"Action intercepted: This action requires manager approval. Approval request #{req_id} has been submitted. Explain this to the user, state the request ID, and tell them they will need to execute the request once approved by an admin."
             else:
                 from mcp_bridge import call_mcp_tool
-                result_text = await call_mcp_tool(fn.name, args)
+                context = user.get("active_context") if user else None
+                profile = user.get("active_profile") if user else None
+                result_text = await call_mcp_tool(fn.name, args, context, profile)
 
             tool_result_parts.append(types.Part(
                 function_response=types.FunctionResponse(
@@ -248,7 +250,9 @@ async def chat_stream(messages: list, tools: list, user: dict = None):
                 result_text = f"Action intercepted: This action requires manager approval. Approval request #{req_id} has been submitted. Explain this to the user, state the request ID, and tell them they will need to execute the request once approved by an admin."
             else:
                 from mcp_bridge import call_mcp_tool
-                result_text = await call_mcp_tool(fn.name, args)
+                context = user.get("active_context") if user else None
+                profile = user.get("active_profile") if user else None
+                result_text = await call_mcp_tool(fn.name, args, context, profile)
 
             # Stream tool result back in real-time
             yield f"data: {json.dumps({'type': 'tool_result', 'tool': fn.name, 'result': result_text})}\n\n"

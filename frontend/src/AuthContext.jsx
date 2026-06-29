@@ -8,6 +8,9 @@ export function AuthProvider({ children }) {
     return saved ? JSON.parse(saved) : null;
   });
 
+  const [activeConfig, setActiveConfig] = useState({ context: "", profile: "" });
+  const [configOptions, setConfigOptions] = useState({ contexts: [], profiles: [] });
+
   const login = async (username, password) => {
     try {
       const res = await fetch("/api/auth/login", {
@@ -40,6 +43,8 @@ export function AuthProvider({ children }) {
   const logout = () => {
     localStorage.removeItem("autopilot_user");
     setUser(null);
+    setActiveConfig({ context: "", profile: "" });
+    setConfigOptions({ contexts: [], profiles: [] });
   };
 
   const apiFetch = async (url, options = {}) => {
@@ -52,7 +57,6 @@ export function AuthProvider({ children }) {
       headers["Authorization"] = `Bearer ${token}`;
     }
 
-    // Default JSON headers for methods with bodies
     if (options.body && !headers["Content-Type"]) {
       headers["Content-Type"] = "application/json";
     }
@@ -60,8 +64,71 @@ export function AuthProvider({ children }) {
     return fetch(url, { ...options, headers });
   };
 
+  const fetchConfig = async () => {
+    if (!user) return;
+    try {
+      const activeRes = await apiFetch("/api/config/active");
+      if (activeRes.ok) {
+        const activeData = await activeRes.json();
+        setActiveConfig({
+          context: activeData.context || "",
+          profile: activeData.profile || "",
+        });
+      }
+
+      const optionsRes = await apiFetch("/api/config/options");
+      if (optionsRes.ok) {
+        const optionsData = await optionsRes.json();
+        setConfigOptions({
+          contexts: optionsData.contexts || [],
+          profiles: optionsData.profiles || [],
+        });
+      }
+    } catch (err) {
+      console.error("Failed to load configs:", err);
+    }
+  };
+
+  const updateConfig = async (context, profile) => {
+    try {
+      const res = await apiFetch("/api/config/active", {
+        method: "POST",
+        body: JSON.stringify({ context, profile }),
+      });
+      if (!res.ok) throw new Error("Failed to update config");
+      const data = await res.json();
+      setActiveConfig({
+        context: data.context || "",
+        profile: data.profile || "",
+      });
+      return { success: true };
+    } catch (err) {
+      console.error("Error updating config:", err);
+      return { success: false, error: err.message };
+    }
+  };
+
+  useEffect(() => {
+    if (user) {
+      fetchConfig();
+    }
+  }, [user]);
+
   return (
-    <AuthContext.Provider value={{ user, login, logout, apiFetch, isAuthenticated: !!user, isAdmin: user?.role === "admin" }}>
+    <AuthContext.Provider
+      value={{
+        user,
+        login,
+        logout,
+        apiFetch,
+        isAuthenticated: !!user,
+        isAdmin: user?.role === "admin",
+        activeConfig,
+        configOptions,
+        updateConfig,
+        refreshConfig: fetchConfig,
+      }}
+    >
       {children}
     </AuthContext.Provider>
   );

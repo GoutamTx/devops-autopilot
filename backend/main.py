@@ -57,6 +57,10 @@ class LoginRequest(BaseModel):
 class ReviewRequest(BaseModel):
     status: str
 
+class ConfigUpdateRequest(BaseModel):
+    context: str = None
+    profile: str = None
+
 
 # ── routes ───────────────────────────────────────────────────────
 def get_age(creation_timestamp: str) -> str:
@@ -143,6 +147,41 @@ async def run_kubectl_json(args: list) -> dict:
 def health():
     return {"status": "ok"}
 
+def get_local_options():
+    import subprocess
+    contexts = []
+    try:
+        res = subprocess.run("kubectl config get-contexts -o name", shell=True, capture_output=True, text=True, timeout=5)
+        contexts = [c.strip() for c in res.stdout.splitlines() if c.strip()]
+    except Exception:
+        pass
+        
+    profiles = []
+    try:
+        res = subprocess.run("aws configure list-profiles", shell=True, capture_output=True, text=True, timeout=5)
+        profiles = [p.strip() for p in res.stdout.splitlines() if p.strip()]
+    except Exception:
+        pass
+        
+    return {"contexts": contexts, "profiles": profiles}
+
+@app.get("/config/options")
+def list_config_options(current_user: dict = Depends(get_current_user)):
+    return get_local_options()
+
+@app.get("/config/active")
+def get_active_config(current_user: dict = Depends(get_current_user)):
+    return {
+        "context": current_user.get("active_context"),
+        "profile": current_user.get("active_profile")
+    }
+
+@app.post("/config/active")
+def set_active_config(req: ConfigUpdateRequest, current_user: dict = Depends(get_current_user)):
+    from database import update_user_config
+    update_user_config(current_user["id"], req.context, req.profile)
+    return {"status": "ok", "context": req.context, "profile": req.profile}
+
 @app.post("/auth/login")
 def login(req: LoginRequest):
     user = get_user_by_username(req.username)
@@ -214,7 +253,12 @@ async def execute_approved_request(id: int, current_user: dict = Depends(get_cur
     tool_input = json.loads(r["tool_input"])
     
     try:
-        result_text = await call_mcp_tool(tool_name, tool_input)
+        from database import get_user_by_id
+        requester = get_user_by_id(r["user_id"])
+        context = requester.get("active_context") if requester else None
+        profile = requester.get("active_profile") if requester else None
+        
+        result_text = await call_mcp_tool(tool_name, tool_input, context, profile)
         update_request_status(id, "executed")
         return {"status": "executed", "result": result_text}
     except Exception as e:

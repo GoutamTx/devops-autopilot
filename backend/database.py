@@ -21,9 +21,19 @@ def init_db():
         username TEXT UNIQUE NOT NULL,
         password_hash TEXT NOT NULL,
         role TEXT CHECK(role IN ('admin', 'developer', 'viewer')) NOT NULL DEFAULT 'developer',
+        active_context TEXT,
+        active_profile TEXT,
         created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
     );
     """)
+    
+    # Run migration check if table already existed without context columns
+    cursor.execute("PRAGMA table_info(users)")
+    columns = [col[1] for col in cursor.fetchall()]
+    if "active_context" not in columns:
+        cursor.execute("ALTER TABLE users ADD COLUMN active_context TEXT")
+    if "active_profile" not in columns:
+        cursor.execute("ALTER TABLE users ADD COLUMN active_profile TEXT")
     
     # Create approval_requests table
     cursor.execute("""
@@ -138,6 +148,16 @@ def update_request_status(request_id: int, status: str, reviewed_by: int = None)
             "UPDATE approval_requests SET status = ? WHERE id = ?",
             (status, request_id)
         )
+    conn.commit()
+    conn.close()
+
+def update_user_config(user_id: int, context: str, profile: str):
+    conn = get_db_connection()
+    cursor = conn.cursor()
+    cursor.execute(
+        "UPDATE users SET active_context = ?, active_profile = ? WHERE id = ?",
+        (context, profile, user_id)
+    )
     conn.commit()
     conn.close()
 
