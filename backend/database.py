@@ -23,17 +23,32 @@ def init_db():
         role TEXT CHECK(role IN ('admin', 'developer', 'viewer')) NOT NULL DEFAULT 'developer',
         active_context TEXT,
         active_profile TEXT,
+        target_mode TEXT CHECK(target_mode IN ('host', 'custom')) NOT NULL DEFAULT 'host',
+        kubeconfig_yaml TEXT,
+        aws_access_key_id TEXT,
+        aws_secret_access_key TEXT,
+        aws_region TEXT,
         created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
     );
     """)
     
-    # Run migration check if table already existed without context columns
+    # Run migration check if table already existed without context/credentials columns
     cursor.execute("PRAGMA table_info(users)")
     columns = [col[1] for col in cursor.fetchall()]
     if "active_context" not in columns:
         cursor.execute("ALTER TABLE users ADD COLUMN active_context TEXT")
     if "active_profile" not in columns:
         cursor.execute("ALTER TABLE users ADD COLUMN active_profile TEXT")
+    if "target_mode" not in columns:
+        cursor.execute("ALTER TABLE users ADD COLUMN target_mode TEXT CHECK(target_mode IN ('host', 'custom')) DEFAULT 'host'")
+    if "kubeconfig_yaml" not in columns:
+        cursor.execute("ALTER TABLE users ADD COLUMN kubeconfig_yaml TEXT")
+    if "aws_access_key_id" not in columns:
+        cursor.execute("ALTER TABLE users ADD COLUMN aws_access_key_id TEXT")
+    if "aws_secret_access_key" not in columns:
+        cursor.execute("ALTER TABLE users ADD COLUMN aws_secret_access_key TEXT")
+    if "aws_region" not in columns:
+        cursor.execute("ALTER TABLE users ADD COLUMN aws_region TEXT")
     
     # Create approval_requests table
     cursor.execute("""
@@ -157,6 +172,20 @@ def update_user_config(user_id: int, context: str, profile: str):
     cursor.execute(
         "UPDATE users SET active_context = ?, active_profile = ? WHERE id = ?",
         (context, profile, user_id)
+    )
+    conn.commit()
+    conn.close()
+
+def update_user_credentials(user_id: int, target_mode: str, kubeconfig_yaml: str, aws_access_key_id: str, aws_secret_access_key: str, aws_region: str):
+    conn = get_db_connection()
+    cursor = conn.cursor()
+    cursor.execute(
+        """
+        UPDATE users 
+        SET target_mode = ?, kubeconfig_yaml = ?, aws_access_key_id = ?, aws_secret_access_key = ?, aws_region = ?
+        WHERE id = ?
+        """,
+        (target_mode, kubeconfig_yaml, aws_access_key_id, aws_secret_access_key, aws_region, user_id)
     )
     conn.commit()
     conn.close()

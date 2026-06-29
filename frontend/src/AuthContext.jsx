@@ -10,6 +10,12 @@ export function AuthProvider({ children }) {
 
   const [activeConfig, setActiveConfig] = useState({ context: "", profile: "" });
   const [configOptions, setConfigOptions] = useState({ contexts: [], profiles: [] });
+  const [credentials, setCredentials] = useState({
+    target_mode: "host",
+    has_kubeconfig: false,
+    has_aws: false,
+    aws_region: "",
+  });
 
   const login = async (username, password) => {
     try {
@@ -45,6 +51,12 @@ export function AuthProvider({ children }) {
     setUser(null);
     setActiveConfig({ context: "", profile: "" });
     setConfigOptions({ contexts: [], profiles: [] });
+    setCredentials({
+      target_mode: "host",
+      has_kubeconfig: false,
+      has_aws: false,
+      aws_region: "",
+    });
   };
 
   const apiFetch = async (url, options = {}) => {
@@ -89,6 +101,19 @@ export function AuthProvider({ children }) {
     }
   };
 
+  const fetchCredentials = async () => {
+    if (!user) return;
+    try {
+      const res = await apiFetch("/api/config/credentials");
+      if (res.ok) {
+        const data = await res.json();
+        setCredentials(data);
+      }
+    } catch (err) {
+      console.error("Failed to load credentials:", err);
+    }
+  };
+
   const updateConfig = async (context, profile) => {
     try {
       const res = await apiFetch("/api/config/active", {
@@ -108,9 +133,25 @@ export function AuthProvider({ children }) {
     }
   };
 
+  const updateCredentials = async (payload) => {
+    try {
+      const res = await apiFetch("/api/config/credentials", {
+        method: "POST",
+        body: JSON.stringify(payload),
+      });
+      if (!res.ok) throw new Error("Failed to update credentials");
+      await fetchCredentials();
+      return { success: true };
+    } catch (err) {
+      console.error("Error updating credentials:", err);
+      return { success: false, error: err.message };
+    }
+  };
+
   useEffect(() => {
     if (user) {
       fetchConfig();
+      fetchCredentials();
     }
   }, [user]);
 
@@ -126,6 +167,9 @@ export function AuthProvider({ children }) {
         activeConfig,
         configOptions,
         updateConfig,
+        credentials,
+        updateCredentials,
+        fetchCredentials,
         refreshConfig: fetchConfig,
       }}
     >

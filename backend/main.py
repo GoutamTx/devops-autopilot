@@ -58,8 +58,15 @@ class ReviewRequest(BaseModel):
     status: str
 
 class ConfigUpdateRequest(BaseModel):
-    context: str = None
-    profile: str = None
+    context: str | None = None
+    profile: str | None = None
+
+class CredentialsUpdateRequest(BaseModel):
+    target_mode: str
+    kubeconfig_yaml: str | None = None
+    aws_access_key_id: str | None = None
+    aws_secret_access_key: str | None = None
+    aws_region: str | None = None
 
 
 # ── routes ───────────────────────────────────────────────────────
@@ -182,6 +189,28 @@ def set_active_config(req: ConfigUpdateRequest, current_user: dict = Depends(get
     update_user_config(current_user["id"], req.context, req.profile)
     return {"status": "ok", "context": req.context, "profile": req.profile}
 
+@app.get("/config/credentials")
+def get_user_credentials(current_user: dict = Depends(get_current_user)):
+    return {
+        "target_mode": current_user.get("target_mode", "host"),
+        "has_kubeconfig": bool(current_user.get("kubeconfig_yaml")),
+        "has_aws": bool(current_user.get("aws_access_key_id") and current_user.get("aws_secret_access_key")),
+        "aws_region": current_user.get("aws_region")
+    }
+
+@app.post("/config/credentials")
+def set_user_credentials(req: CredentialsUpdateRequest, current_user: dict = Depends(get_current_user)):
+    from database import update_user_credentials
+    update_user_credentials(
+        current_user["id"],
+        req.target_mode,
+        req.kubeconfig_yaml,
+        req.aws_access_key_id,
+        req.aws_secret_access_key,
+        req.aws_region
+    )
+    return {"status": "ok"}
+
 @app.post("/auth/login")
 def login(req: LoginRequest):
     user = get_user_by_username(req.username)
@@ -255,10 +284,8 @@ async def execute_approved_request(id: int, current_user: dict = Depends(get_cur
     try:
         from database import get_user_by_id
         requester = get_user_by_id(r["user_id"])
-        context = requester.get("active_context") if requester else None
-        profile = requester.get("active_profile") if requester else None
         
-        result_text = await call_mcp_tool(tool_name, tool_input, context, profile)
+        result_text = await call_mcp_tool(tool_name, tool_input, requester)
         update_request_status(id, "executed")
         return {"status": "executed", "result": result_text}
     except Exception as e:
