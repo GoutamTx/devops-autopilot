@@ -3,6 +3,7 @@ import { Prism as SyntaxHighlighter } from "react-syntax-highlighter";
 import { oneDark } from "react-syntax-highlighter/dist/esm/styles/prism";
 import ToolOutput from "./ToolOutput";
 import ApprovalCard from "./ApprovalCard";
+import ConfirmationCard from "./ConfirmationCard";
 
 export default function Message({ msg, isStreaming, onExecuted }) {
   const isUser = msg.role === "user";
@@ -24,6 +25,25 @@ export default function Message({ msg, isStreaming, onExecuted }) {
         break;
       }
     }
+  }
+
+  // Detect restricted tool calls that are pending confirmation
+  const unsubmittedRequests = [];
+  if (!isUser && msg.tool_calls) {
+    msg.tool_calls.forEach((tc, idx) => {
+      const resVal = toolResults[idx];
+      if (
+        typeof resVal === "string" &&
+        resVal.includes("requires manager approval") &&
+        resVal.includes("It has NOT been submitted yet")
+      ) {
+        unsubmittedRequests.push({
+          toolName: tc.tool,
+          toolInput: tc.input,
+          key: `${tc.tool}-${idx}`
+        });
+      }
+    });
   }
 
   return (
@@ -75,6 +95,16 @@ export default function Message({ msg, isStreaming, onExecuted }) {
         {!isUser && reqId && (
           <ApprovalCard requestId={reqId} onExecuted={(resultText) => onExecuted(resultText, reqId)} />
         )}
+
+        {/* Render Confirmation Card for restricted actions not yet submitted */}
+        {!isUser && unsubmittedRequests.map(req => (
+          <ConfirmationCard
+            key={req.key}
+            toolName={req.toolName}
+            toolInput={req.toolInput}
+            onExecuted={onExecuted}
+          />
+        ))}
       </div>
     </div>
   );

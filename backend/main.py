@@ -68,6 +68,11 @@ class CredentialsUpdateRequest(BaseModel):
     aws_secret_access_key: str | None = None
     aws_region: str | None = None
 
+class CreateRequestInput(BaseModel):
+    tool_name: str
+    tool_input: dict
+
+
 
 # ── routes ───────────────────────────────────────────────────────
 def get_age(creation_timestamp: str) -> str:
@@ -263,6 +268,13 @@ def list_user_requests(current_user: dict = Depends(get_current_user)):
     rows = cursor.fetchall()
     conn.close()
     return {"requests": [dict(r) for r in rows]}
+
+@app.post("/requests/submit")
+def submit_new_request(req: CreateRequestInput, current_user: dict = Depends(get_current_user)):
+    from database import create_approval_request
+    request_id = create_approval_request(current_user["id"], req.tool_name, req.tool_input)
+    return {"status": "ok", "request_id": request_id}
+
 
 @app.post("/chat/execute-request/{id}")
 async def execute_approved_request(id: int, current_user: dict = Depends(get_current_user)):

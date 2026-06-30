@@ -141,9 +141,7 @@ async def chat(messages: list, tools: list, user: dict = None) -> dict:
 
             is_restricted = fn.name in ["rollout_restart", "scale_deployment", "apply_manifest", "delete_pod", "run_pod"]
             if user and user.get("role") != "admin" and is_restricted:
-                from database import create_approval_request
-                req_id = create_approval_request(user["id"], fn.name, args)
-                result_text = f"Action intercepted: This action requires manager approval. Approval request #{req_id} has been submitted. Explain this to the user, state the request ID, and tell them they will need to execute the request once approved by an admin."
+                result_text = f"Action intercepted: The action '{fn.name}' requires manager approval. It has NOT been submitted yet. The user must confirm if they want to submit this request."
             else:
                 from mcp_bridge import call_mcp_tool
                 result_text = await call_mcp_tool(fn.name, args, user)
@@ -243,9 +241,7 @@ async def chat_stream(messages: list, tools: list, user: dict = None):
 
             is_restricted = fn.name in ["rollout_restart", "scale_deployment", "apply_manifest", "delete_pod", "run_pod"]
             if user and user.get("role") != "admin" and is_restricted:
-                from database import create_approval_request
-                req_id = create_approval_request(user["id"], fn.name, args)
-                result_text = f"Action intercepted: This action requires manager approval. Approval request #{req_id} has been submitted. Explain this to the user, state the request ID, and tell them they will need to execute the request once approved by an admin."
+                result_text = f"Action intercepted: The action '{fn.name}' requires manager approval. It has NOT been submitted yet. The user must confirm if they want to submit this request."
             else:
                 from mcp_bridge import call_mcp_tool
                 result_text = await call_mcp_tool(fn.name, args, user)
